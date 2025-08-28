@@ -55,7 +55,7 @@ INSTAGRAM_ACCESS_TOKEN=your_long_lived_access_token
 WEBHOOK_VERIFY_TOKEN=your_custom_verify_token_here
 
 # Environment
-NODE_ENV=development
+NODE_ENVI=development
 ```
 
 ### 2.2 Find Your Instagram Account ID

@@ -22,7 +22,7 @@ class Logger {
   private maxLogs: number = 1000; // Keep last 1000 logs in memory
 
   constructor() {
-    this.minLevel = process.env.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO;
+    this.minLevel = process.env.NODE_ENVI === 'development' ? LogLevel.DEBUG : LogLevel.INFO;
   }
 
   private formatMessage(level: LogLevel, message: string, context?: string, data?: any, error?: Error): string {
@@ -182,7 +182,7 @@ export async function withErrorHandling<T>(
 export function createErrorResponse(error: unknown, context: string): Response {
   const err = handleError(error, context);
   
-  const isProduction = process.env.NODE_ENV === 'production';
+  const isProduction = process.env.NODE_ENVI === 'production';
   
   return new Response(JSON.stringify({
     error: isProduction ? 'Internal Server Error' : err.message,

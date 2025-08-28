@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     console.log('Webhook signature:', signature);
     
     // In development mode, allow bypassing signature verification with a special header
-    const isDevelopment = process.env.NODE_ENV === 'development';
+    const isDevelopment = process.env.NODE_ENVI === 'development';
     const bypassSignature = request.headers.get('x-bypass-signature') === 'development';
     
     console.log('Development mode:', isDevelopment, 'Bypass:', bypassSignature);

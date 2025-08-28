@@ -377,7 +377,7 @@ function verifySignature(payload: string, signature: string | null): boolean {
 
 ```typescript
 // Development mode allows bypassing signature verification for testing
-const isDevelopment = process.env.NODE_ENV === 'development';
+const isDevelopment = process.env.NODE_ENVI === 'development';
 const bypassSignature = request.headers.get('x-bypass-signature') === 'development';
 
 if (!isDevelopment || !bypassSignature) {
@@ -582,7 +582,7 @@ POST /api/test-post-validation
 
 ### Debug Mode
 
-Set `NODE_ENV=development` to enable:
+Set `NODE_ENVI=development` to enable:
 - Detailed console logging
 - Signature verification bypass option
 - Enhanced error messages

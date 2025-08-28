@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     console.log('Payload:', JSON.stringify(webhookPayload, null, 2));
 
     // Send the simulated webhook to our webhook endpoint
-    const webhookUrl = process.env.NODE_ENV === 'development' 
+    const webhookUrl = process.env.NODE_ENVI === 'development' 
       ? 'http://localhost:3000/api/instagram/webhook'
       : `${process.env.VERCEL_URL || 'https://your-domain.com'}/api/instagram/webhook`;
 
