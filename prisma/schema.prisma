@@ -1,0 +1,134 @@
+// Instagram Comment Monitoring System - Prisma Schema
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Comment Monitor Model - Core monitoring rules
+model CommentMonitor {
+  id                String   @id @default(cuid())
+  postUrl           String   @map("post_url")
+  postId            String   @map("post_id")
+  mediaId           String?  @map("media_id") // Instagram media ID for API calls
+  keyword           String
+  autoReplyMessage  String   @map("auto_reply_message")
+  isActive          Boolean  @map("is_active") @default(true)
+  createdAt         DateTime @map("created_at") @default(now())
+  detectionCount    Int      @map("detection_count") @default(0)
+  lastDetection     DateTime? @map("last_detection")
+  updatedAt         DateTime @map("updated_at") @updatedAt
+
+  // Relations
+  detectionLogs DetectionLog[]
+  webhookEvents WebhookEvent[]
+  
+  // Unique constraint for post + keyword combination
+  @@unique([postId, keyword])
+  // Index for performance
+  @@index([isActive])
+  @@index([postId])
+  @@index([mediaId])
+  @@map("comment_monitors")
+}
+
+// Detection Log Model - Track all keyword detections
+model DetectionLog {
+  id           String   @id @default(cuid())
+  monitorId    String   @map("monitor_id")
+  commentId    String   @map("comment_id") // Instagram comment ID
+  commenterId  String   @map("commenter_id") // Instagram user ID
+  commenterUsername String? @map("commenter_username") // Instagram username
+  detectedText String   @map("detected_text") // The actual comment text
+  detectedAt   DateTime @map("detected_at") @default(now())
+  replyStatus  String   @map("reply_status") @default("pending") // pending, sent, failed
+  replyId      String?  @map("reply_id") // Instagram DM message ID if sent
+  errorMessage String?  @map("error_message") // Error details if failed
+  metadata     Json?    // Additional data (location, engagement, etc.)
+
+  // Relations
+  monitor CommentMonitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  
+  // Indexes for performance
+  @@index([monitorId])
+  @@index([commentId])
+  @@index([commenterId])
+  @@index([detectedAt])
+  @@index([replyStatus])
+  @@map("detection_logs")
+}
+
+// Webhook Event Model - Log all Instagram webhook events
+model WebhookEvent {
+  id               String    @id @default(cuid())
+  eventType        String    @map("event_type") // comment, message, etc.
+  instagramObjectId String   @map("instagram_object_id") // comment/message ID
+  instagramUserId  String?   @map("instagram_user_id") // User who triggered event
+  monitorId        String?   @map("monitor_id") // Associated monitor if matched
+  payloadData      Json      @map("payload_data") // Full webhook payload
+  processingStatus String    @map("processing_status") @default("pending") // pending, processed, failed
+  errorMessage     String?   @map("error_message")
+  receivedAt       DateTime  @map("received_at") @default(now())
+  processedAt      DateTime? @map("processed_at")
+  
+  // Relations
+  monitor CommentMonitor? @relation(fields: [monitorId], references: [id], onDelete: SetNull)
+  
+  // Indexes for performance
+  @@index([eventType])
+  @@index([instagramObjectId])
+  @@index([monitorId])
+  @@index([processingStatus])
+  @@index([receivedAt])
+  @@map("webhook_events")
+}
+
+// System Log Model - Application-level logging
+model SystemLog {
+  id        String   @id @default(cuid())
+  level     String   // info, warn, error, debug
+  category  String   // DATABASE, INSTAGRAM_API, WEBHOOK, etc.
+  message   String
+  metadata  Json?    // Additional structured data
+  createdAt DateTime @map("created_at") @default(now())
+  
+  // Indexes for performance
+  @@index([level])
+  @@index([category])
+  @@index([createdAt])
+  @@map("system_logs")
+}
+
+// User Session Model - Track user interactions (future use)
+model UserSession {
+  id          String   @id @default(cuid())
+  sessionId   String   @unique @map("session_id")
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  createdAt   DateTime @map("created_at") @default(now())
+  lastActiveAt DateTime @map("last_active_at") @default(now())
+  
+  @@index([sessionId])
+  @@index([createdAt])
+  @@map("user_sessions")
+}
+
+// Application Settings Model - Store system configuration
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  valueType String   @map("value_type") @default("string") // string, number, boolean, json
+  description String?
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @updatedAt
+  
+  @@index([key])
+  @@map("app_settings")
+}

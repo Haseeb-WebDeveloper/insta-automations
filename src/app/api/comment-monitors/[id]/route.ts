@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
-import storage, { CommentMonitor } from '@/lib/comment-monitor-storage';
+import { databaseService } from '@/lib/database/services/database.service';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 
 // PUT - Update specific monitor
 export async function PUT(
@@ -12,7 +13,7 @@ export async function PUT(
     const body = await request.json();
     
     // Find monitor
-    const existingMonitor = storage.getMonitorById(id);
+    const existingMonitor = await databaseService.getCommentMonitorRepository().findById(id);
     if (!existingMonitor) {
       return NextResponse.json(
         { error: 'Monitor not found' },
@@ -22,25 +23,21 @@ export async function PUT(
 
     // Update allowed fields
     const allowedUpdates = ['keyword', 'autoReplyMessage', 'isActive'];
-    const updates: Partial<CommentMonitor> = {};
+    const updates: any = {};
     
     for (const key of allowedUpdates) {
       if (key in body) {
-        updates[key as keyof CommentMonitor] = body[key];
+        updates[key] = body[key];
       }
     }
 
     // Apply updates
-    const success = storage.updateMonitor(id, updates);
-    
-    if (!success) {
-      return NextResponse.json(
-        { error: 'Failed to update monitor' },
-        { status: 500 }
-      );
-    }
+    const updatedMonitor = await databaseService.getCommentMonitorRepository().update(id, updates);
 
-    const updatedMonitor = storage.getMonitorById(id);
+    logger.info('Monitor updated successfully', 'API', {
+      id,
+      changes: Object.keys(updates),
+    });
 
     return NextResponse.json({
       success: true,
@@ -48,6 +45,14 @@ export async function PUT(
     });
 
   } catch (error) {
+    if (error instanceof PrismaClientKnownRequestError && error.code === 'P2025') {
+      return NextResponse.json(
+        { error: 'Monitor not found' },
+        { status: 404 }
+      );
+    }
+    
+    logger.error('Failed to update monitor', 'API', {}, error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json(
       { error: 'Failed to update monitor' },
       { status: 500 }
@@ -64,7 +69,7 @@ export async function DELETE(
     const { id } = await params;
     
     // Delete monitor
-    const deleted = storage.deleteMonitor(id);
+    const deleted = await databaseService.getCommentMonitorRepository().delete(id);
     
     if (!deleted) {
       return NextResponse.json(
@@ -73,7 +78,7 @@ export async function DELETE(
       );
     }
 
-    logger.info('Deleted monitor:', id);
+    logger.info('Monitor deleted successfully', 'API', { id });
 
     return NextResponse.json({
       success: true,
@@ -81,7 +86,7 @@ export async function DELETE(
     });
 
   } catch (error) {
-    logger.error('Failed to delete monitor:', error as string);
+    logger.error('Failed to delete monitor', 'API', {}, error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json(
       { error: 'Failed to delete monitor' },
       { status: 500 }
@@ -97,7 +102,7 @@ export async function GET(
   try {
     const { id } = await params;
     
-    const monitor = storage.getMonitorById(id);
+    const monitor = await databaseService.getCommentMonitorRepository().findById(id);
     if (!monitor) {
       return NextResponse.json(
         { error: 'Monitor not found' },
@@ -111,7 +116,7 @@ export async function GET(
     });
 
   } catch (error) {
-    logger.error('Failed to fetch monitor:', error as string);
+    logger.error('Failed to fetch monitor', 'API', {}, error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json(
       { error: 'Failed to fetch monitor' },
       { status: 500 }

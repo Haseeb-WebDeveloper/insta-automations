@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
-import storage from "@/lib/comment-monitor-storage";
+import { databaseService } from '@/lib/database/services/database.service';
 
 // GET - Get monitoring statistics
 export async function GET() {
   try {
-    const stats = storage.getStats();
+    const stats = await databaseService.getCommentMonitorRepository().getStats();
 
     return NextResponse.json(stats);
   } catch (error) {
-    logger.error("Failed to generate statistics:", error as string);
+    logger.error("Failed to generate statistics", 'API', {}, error instanceof Error ? error : new Error(String(error)));
 
     // Return default stats on error
     const defaultStats = {
@@ -32,9 +32,11 @@ export async function POST(request: NextRequest) {
 
     // This endpoint can be used by the webhook to update statistics
     if (action === "detection") {
-      const success = storage.updateDetectionStats(monitorId, detectionTime);
-
-      if (!success) {
+      try {
+        await databaseService.getCommentMonitorRepository().incrementDetectionCount(monitorId);
+        logger.info('Statistics updated via webhook', 'API', { monitorId, action });
+      } catch (error) {
+        logger.error('Monitor not found for stats update', 'API', { monitorId });
         return NextResponse.json(
           { error: "Monitor not found" },
           { status: 404 }
@@ -44,7 +46,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    logger.error("Failed to update statistics:", error as string);
+    logger.error("Failed to update statistics", 'API', {}, error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json(
       { error: "Failed to update statistics" },
       { status: 500 }

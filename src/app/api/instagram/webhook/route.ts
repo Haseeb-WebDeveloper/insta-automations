@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { instagramAPI } from '@/lib/instagram-api';
 import { logger, createErrorResponse, withErrorHandling } from '@/lib/logger';
-import storage from '@/lib/comment-monitor-storage';
+import { databaseService } from '@/lib/database/services/database.service';
 
 // Type definitions for Instagram webhook payloads
 interface InstagramMessage {
@@ -311,6 +311,15 @@ async function handleComment(change: InstagramCommentChange) {
   logger.debug('Processing comment event', 'COMMENT_HANDLER', change);
   
   try {
+    // Log webhook event to database
+    await databaseService.getWebhookEventRepository().create({
+      eventType: 'comment',
+      instagramObjectId: change.value.id,
+      instagramUserId: change.value.from.id,
+      payloadData: change,
+      processingStatus: 'processing',
+    });
+    
     const commentData = change.value;
     // Handle both test and real webhook structures
     const mediaId = commentData.media_id || commentData.media?.id;
@@ -345,13 +354,13 @@ async function handleComment(change: InstagramCommentChange) {
       originalText: commentData.text
     });
     
-    // Get active monitors for this post using enhanced matching
-    const relevantMonitors = storage.findRelevantMonitors(mediaId);
+    // Get active monitors for this post using database service
+    const relevantMonitors = await databaseService.findRelevantMonitors(mediaId);
     
     // If no matches with enhanced search, try fallback matching for development
     let fallbackMonitors: any[] = [];
     if (relevantMonitors.length === 0) {
-      const activeMonitors = storage.getActiveMonitors();
+      const activeMonitors = await databaseService.getCommentMonitorRepository().findActiveMonitors();
       
       // For development: if we have a media ID and monitors with shortcodes,
       // let's temporarily match against ALL monitors and log the details
@@ -391,6 +400,15 @@ async function handleComment(change: InstagramCommentChange) {
           mediaId
         });
         
+        // Log the detection to database
+        const detectionLog = await databaseService.logKeywordDetection(
+          monitor.id,
+          commentData.id,
+          commenterId,
+          commentData.text,
+          commenterUsername
+        );
+        
         // Prepare the DM message
         let dmMessage = monitor.autoReplyMessage;
         
@@ -400,16 +418,28 @@ async function handleComment(change: InstagramCommentChange) {
         console.log('Sending DM to commenter:', { commenterId, dmMessage });
         
         // Send DM to the commenter
-        await sendReplyToCommenter(commenterId, dmMessage, monitor.id);
+        const dmResult = await sendReplyToCommenter(commenterId, dmMessage, monitor.id);
         
-        // Update detection statistics
-        const detectionTime = new Date().toISOString();
-        storage.updateDetectionStats(monitor.id, detectionTime);
+        // Update detection log with reply status
+        if (dmResult.success) {
+          await databaseService.getDetectionLogRepository().updateReplyStatus(
+            detectionLog.id,
+            'sent',
+            dmResult.messageId
+          );
+        } else {
+          await databaseService.getDetectionLogRepository().updateReplyStatus(
+            detectionLog.id,
+            'failed',
+            undefined,
+            dmResult.error
+          );
+        }
         
-        logger.info('Detection stats updated', 'COMMENT_HANDLER', {
+        logger.info('Detection processing complete', 'COMMENT_HANDLER', {
           monitorId: monitor.id,
-          detectionTime,
-          newCount: storage.getMonitorById(monitor.id)?.detectionCount
+          detectionLogId: detectionLog.id,
+          dmSent: dmResult.success
         });
       } else {
         console.log('No keyword match for:', keyword);
@@ -425,7 +455,7 @@ async function handleComment(change: InstagramCommentChange) {
 }
 
 // Send DM to commenter (similar to sendReply but with additional logging)
-async function sendReplyToCommenter(commenterId: string, message: string, monitorId: string) {
+async function sendReplyToCommenter(commenterId: string, message: string, monitorId: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
   console.log('=== SENDING DM TO COMMENTER ===');
   console.log('Commenter ID:', commenterId);
   console.log('Message:', message);
@@ -439,7 +469,7 @@ async function sendReplyToCommenter(commenterId: string, message: string, monito
       monitorId,
       reason: 'Test user or invalid ID format'
     });
-    return;
+    return { success: false, error: 'Invalid commenter ID format' };
   }
   
   try {
@@ -455,6 +485,7 @@ async function sendReplyToCommenter(commenterId: string, message: string, monito
         monitorId,
         error: result.error.message
       });
+      return { success: false, error: result.error.message };
     } else {
       console.log('DM sent successfully, message ID:', result.message_id);
       logger.info('DM sent successfully to commenter', 'SEND_DM', {
@@ -463,15 +494,18 @@ async function sendReplyToCommenter(commenterId: string, message: string, monito
         monitorId,
         messageId: result.message_id
       });
+      return { success: true, messageId: result.message_id };
     }
   } catch (error) {
     console.error('DM send error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error('Error sending DM to commenter', 'SEND_DM', {
       commenterId,
       message,
       monitorId
     }, error as Error);
+    return { success: false, error: errorMessage };
+  } finally {
+    console.log('=== DM SENDING COMPLETE ===');
   }
-  
-  console.log('=== DM SENDING COMPLETE ===');
 }

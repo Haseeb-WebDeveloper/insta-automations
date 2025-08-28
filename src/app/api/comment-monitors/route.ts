@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
-import storage, { CommentMonitor, parseInstagramPostId, validateInstagramPost } from '@/lib/comment-monitor-storage';
+import { databaseService } from '@/lib/database/services/database.service';
+import { parseInstagramPostId, validateInstagramPost } from '@/lib/comment-monitor-storage';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 
 // GET - List all monitors
 export async function GET() {
   try {
-    const monitors = storage.getAllMonitors();
-    logger.info(`Fetching ${monitors.length} comment monitors`);
+    const monitors = await databaseService.getCommentMonitorRepository().findAll();
+    logger.info(`Fetching ${monitors.length} comment monitors`, 'API');
     
     return NextResponse.json({
       success: true,
@@ -14,7 +16,7 @@ export async function GET() {
       total: monitors.length
     });
   } catch (error) {
-    logger.error('Failed to fetch monitors:', error as string);
+    logger.error('Failed to fetch monitors', 'API', {}, error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json(
       { error: 'Failed to fetch monitors' },
       { status: 500 }
@@ -49,7 +51,8 @@ export async function POST(request: NextRequest) {
     const cleanKeyword = keyword.trim();
 
     // Check for duplicate monitor (same post + keyword)
-    if (storage.hasDuplicateMonitor(postId, cleanKeyword)) {
+    const hasDuplicate = await databaseService.getCommentMonitorRepository().checkDuplicate(postId, cleanKeyword);
+    if (hasDuplicate) {
       return NextResponse.json(
         { error: 'A monitor with this post and keyword already exists' },
         { status: 409 }
@@ -65,20 +68,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create new monitor
-    const newMonitor: CommentMonitor = {
-      id: `monitor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    // Create new monitor in database
+    const newMonitor = await databaseService.getCommentMonitorRepository().create({
       postUrl: postUrl.trim(),
       postId,
       keyword: cleanKeyword,
       autoReplyMessage: autoReplyMessage?.trim() || `Hi! You commented "${cleanKeyword}" on my post. Thanks for engaging with my content!`,
       isActive: true,
-      createdAt: new Date().toISOString(),
-      detectionCount: 0,
-    };
+    });
 
-    storage.addMonitor(newMonitor);
-
+    logger.info('Monitor created successfully', 'API', {
+      id: newMonitor.id,
+      postId: newMonitor.postId,
+      keyword: newMonitor.keyword,
+    });
 
     return NextResponse.json({
       success: true,
@@ -86,7 +89,15 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
 
   } catch (error) {
-    logger.error('Failed to create monitor:', error as string);
+    // Handle Prisma unique constraint errors
+    if (error instanceof PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'A monitor with this post and keyword already exists' },
+        { status: 409 }
+      );
+    }
+    
+    logger.error('Failed to create monitor', 'API', {}, error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json(
       { error: 'Failed to create monitor' },
       { status: 500 }
@@ -97,16 +108,16 @@ export async function POST(request: NextRequest) {
 // DELETE - Delete all monitors (for cleanup)
 export async function DELETE() {
   try {
-    const deletedCount = storage.clearAll();
+    const deletedCount = await databaseService.getCommentMonitorRepository().clearAll();
     
-    logger.info(`Deleted all ${deletedCount} monitors`);
+    logger.info(`Deleted all ${deletedCount} monitors`, 'API');
     
     return NextResponse.json({
       success: true,
       message: `Deleted ${deletedCount} monitors`
     });
   } catch (error) {
-    logger.error('Failed to delete all monitors:', error as string);
+    logger.error('Failed to delete all monitors', 'API', {}, error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json(
       { error: 'Failed to delete monitors' },
       { status: 500 }
@@ -115,10 +126,16 @@ export async function DELETE() {
 }
 
 // Export functions for other modules
-export function getActiveMonitors(): CommentMonitor[] {
-  return storage.getActiveMonitors();
+export async function getActiveMonitors() {
+  return await databaseService.getCommentMonitorRepository().findActiveMonitors();
 }
 
-export function updateMonitorStats(monitorId: string, detectionTime?: string): boolean {
-  return storage.updateDetectionStats(monitorId, detectionTime);
+export async function updateMonitorStats(monitorId: string, detectionTime?: string): Promise<boolean> {
+  try {
+    await databaseService.getCommentMonitorRepository().incrementDetectionCount(monitorId);
+    return true;
+  } catch (error) {
+    logger.error('Failed to update monitor stats', 'API', { monitorId }, error instanceof Error ? error : new Error(String(error)));
+    return false;
+  }
 }
