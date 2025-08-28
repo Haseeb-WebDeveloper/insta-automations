@@ -3,8 +3,9 @@ import { instagramAPI } from '@/lib/instagram-api';
 import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
+  console.log('=== TEST ENDPOINT CALLED ===', new Date().toISOString());
   try {
-    logger.info('Running Instagram API test', 'TEST');
+    logger.info('Running Instagram API test - RELOAD CHECK', 'TEST');
     
     // Test 1: Get account info
     const accountInfo = await instagramAPI.getAccountInfo();
