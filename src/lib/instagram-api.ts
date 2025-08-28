@@ -1,27 +1,9 @@
 // Instagram Graph API Service
 // Handles all interactions with Instagram Graph API
 
+import { InstagramAPIResponse, InstagramSendMessagePayload } from '@/types/instagram';
 import { logger } from './logger';
 
-export interface InstagramMessage {
-  text: string;
-}
-
-export interface InstagramSendMessagePayload {
-  recipient: {
-    id: string;
-  };
-  message: InstagramMessage;
-}
-
-export interface InstagramAPIResponse {
-  message_id?: string;
-  error?: {
-    message: string;
-    type: string;
-    code: number;
-  };
-}
 
 export class InstagramAPI {
   private readonly accessToken: string;

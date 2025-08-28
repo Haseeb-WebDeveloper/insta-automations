@@ -2,12 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { instagramAPI } from '@/lib/instagram-api';
 import { logger, createErrorResponse, withErrorHandling } from '@/lib/logger';
+import storage from '@/lib/comment-monitor-storage';
 
 // Type definitions for Instagram webhook payloads
 interface InstagramMessage {
   id: string;
   text: string;
   timestamp: string;
+}
+
+interface InstagramComment {
+  id: string;
+  text: string;
+  timestamp: string;
+  from: {
+    id: string;
+    username?: string;
+  };
+  media: {
+    id: string;
+    media_product_type?: string;
+  };
 }
 
 interface InstagramMessaging {
@@ -21,12 +36,28 @@ interface InstagramMessaging {
   message?: InstagramMessage;
 }
 
+interface InstagramCommentChange {
+  field: string;
+  value: {
+    id: string;
+    media_id: string;
+    text: string;
+    from: {
+      id: string;
+      username?: string;
+    };
+    parent_id?: string;
+    created_time: string;
+  };
+}
+
 interface InstagramWebhookPayload {
   object: string;
   entry: Array<{
     id: string;
     time: number;
     messaging?: InstagramMessaging[];
+    changes?: InstagramCommentChange[];
   }>;
 }
 
@@ -100,11 +131,13 @@ export async function POST(request: NextRequest) {
     console.log('Parsed payload:', payload);
     logger.webhookReceived(payload);
 
-    // Process Instagram messages
+    // Process Instagram messages and comments
     if (payload.object === 'instagram') {
       console.log('Processing Instagram webhook');
       for (const entry of payload.entry) {
         console.log('Processing entry:', entry);
+        
+        // Handle direct messages
         if (entry.messaging) {
           console.log('Found messaging array with', entry.messaging.length, 'messages');
           for (const messaging of entry.messaging) {
@@ -114,6 +147,21 @@ export async function POST(request: NextRequest) {
               'MESSAGE_HANDLING',
               undefined
             );
+          }
+        }
+        
+        // Handle comment events
+        if (entry.changes) {
+          console.log('Found changes array with', entry.changes.length, 'changes');
+          for (const change of entry.changes) {
+            console.log('Processing change:', change);
+            if (change.field === 'comments') {
+              await withErrorHandling(
+                () => handleComment(change),
+                'COMMENT_HANDLING',
+                undefined
+              );
+            }
           }
         }
       }
@@ -249,4 +297,177 @@ async function sendReply(recipientId: string, message: string) {
     logger.error('Error sending reply', 'SEND_REPLY', { recipientId, message }, error as Error);
   }
   console.log('=== REPLY SENDING COMPLETE ===');
+}
+
+// Handle Instagram comment events for keyword monitoring
+async function handleComment(change: InstagramCommentChange) {
+  console.log('=== HANDLING COMMENT ===');
+  console.log('Comment change:', change);
+  
+  logger.debug('Processing comment event', 'COMMENT_HANDLER', change);
+  
+  try {
+    const commentData = change.value;
+    // Handle both test and real webhook structures
+    const mediaId = commentData.media_id || commentData.media?.id;
+    const commentText = commentData.text.toLowerCase().trim();
+    const commenterId = commentData.from.id;
+    const commenterUsername = commentData.from.username || 'unknown';
+    
+    console.log('Comment details:', {
+      mediaId,
+      commentText,
+      commenterId,
+      commenterUsername,
+      originalText: commentData.text,
+      rawMediaData: commentData.media_id || commentData.media
+    });
+    
+    if (!mediaId) {
+      logger.warn('No media ID found in comment data', 'COMMENT_HANDLER', {
+        commentData,
+        hasMediaId: !!commentData.media_id,
+        hasMediaObject: !!commentData.media,
+        mediaObjectId: commentData.media?.id
+      });
+      return;
+    }
+    
+    logger.info('Comment received for processing', 'COMMENT_HANDLER', {
+      mediaId,
+      commentText,
+      commenterId,
+      commenterUsername,
+      originalText: commentData.text
+    });
+    
+    // Get active monitors for this post using enhanced matching
+    const relevantMonitors = storage.findRelevantMonitors(mediaId);
+    
+    // If no matches with enhanced search, try fallback matching for development
+    let fallbackMonitors: any[] = [];
+    if (relevantMonitors.length === 0) {
+      const activeMonitors = storage.getActiveMonitors();
+      
+      // For development: if we have a media ID and monitors with shortcodes,
+      // let's temporarily match against ALL monitors and log the details
+      if (mediaId.length > 10 && /^\d+$/.test(mediaId)) {
+        fallbackMonitors = activeMonitors;
+        logger.info('Using fallback matching for media ID', 'COMMENT_HANDLER', {
+          mediaId,
+          totalActiveMonitors: activeMonitors.length,
+          monitorPostIds: activeMonitors.map(m => m.postId)
+        });
+      }
+    }
+    
+    const finalMonitors = relevantMonitors.length > 0 ? relevantMonitors : fallbackMonitors;
+    
+    console.log('Found', finalMonitors.length, 'relevant monitors for media ID:', mediaId);
+    
+    if (finalMonitors.length === 0) {
+      logger.info('No monitors found for this post', 'COMMENT_HANDLER', { mediaId });
+      return;
+    }
+    
+    // Check each monitor for keyword matches
+    for (const monitor of finalMonitors) {
+      const keyword = monitor.keyword.toLowerCase();
+      
+      console.log('Checking keyword:', keyword, 'in comment:', commentText);
+      
+      if (commentText.includes(keyword)) {
+        console.log('KEYWORD MATCH FOUND!', { keyword, commentText });
+        
+        logger.info('Keyword detected in comment', 'KEYWORD_DETECTION', {
+          monitorId: monitor.id,
+          keyword: monitor.keyword,
+          commentText,
+          commenterId,
+          mediaId
+        });
+        
+        // Prepare the DM message
+        let dmMessage = monitor.autoReplyMessage;
+        
+        // Replace [keyword] placeholder with the actual keyword
+        dmMessage = dmMessage.replace(/\[keyword\]/gi, monitor.keyword);
+        
+        console.log('Sending DM to commenter:', { commenterId, dmMessage });
+        
+        // Send DM to the commenter
+        await sendReplyToCommenter(commenterId, dmMessage, monitor.id);
+        
+        // Update detection statistics
+        const detectionTime = new Date().toISOString();
+        storage.updateDetectionStats(monitor.id, detectionTime);
+        
+        logger.info('Detection stats updated', 'COMMENT_HANDLER', {
+          monitorId: monitor.id,
+          detectionTime,
+          newCount: storage.getMonitorById(monitor.id)?.detectionCount
+        });
+      } else {
+        console.log('No keyword match for:', keyword);
+      }
+    }
+    
+  } catch (error) {
+    console.error('Error handling comment:', error);
+    logger.error('Error handling comment', 'COMMENT_HANDLER', { change }, error as Error);
+  }
+  
+  console.log('=== COMMENT HANDLING COMPLETE ===');
+}
+
+// Send DM to commenter (similar to sendReply but with additional logging)
+async function sendReplyToCommenter(commenterId: string, message: string, monitorId: string) {
+  console.log('=== SENDING DM TO COMMENTER ===');
+  console.log('Commenter ID:', commenterId);
+  console.log('Message:', message);
+  console.log('Monitor ID:', monitorId);
+  
+  // Validate commenter ID format (Instagram user IDs should be numeric)
+  if (!commenterId || commenterId === 'test_user' || !/^\d+$/.test(commenterId)) {
+    console.log('Invalid commenter ID format, skipping send for test/invalid user');
+    logger.warn('Skipping DM send due to invalid commenter ID', 'SEND_DM', {
+      commenterId,
+      monitorId,
+      reason: 'Test user or invalid ID format'
+    });
+    return;
+  }
+  
+  try {
+    const result = await instagramAPI.sendMessage(commenterId, message);
+    
+    console.log('DM send result:', result);
+    
+    if (result.error) {
+      console.log('DM send failed:', result.error);
+      logger.error('Failed to send DM to commenter', 'SEND_DM', {
+        commenterId,
+        message,
+        monitorId,
+        error: result.error.message
+      });
+    } else {
+      console.log('DM sent successfully, message ID:', result.message_id);
+      logger.info('DM sent successfully to commenter', 'SEND_DM', {
+        commenterId,
+        message,
+        monitorId,
+        messageId: result.message_id
+      });
+    }
+  } catch (error) {
+    console.error('DM send error:', error);
+    logger.error('Error sending DM to commenter', 'SEND_DM', {
+      commenterId,
+      message,
+      monitorId
+    }, error as Error);
+  }
+  
+  console.log('=== DM SENDING COMPLETE ===');
 }
