@@ -156,9 +156,9 @@ ai-instagram-content-moderation/
 ✅ Meta Developer Account
 
 # Critical IDs (from your current setup):
-INSTAGRAM_ACCOUNT_ID=17841463755973016    # Use Business Account ID, NOT User ID
-FACEBOOK_PAGE_ID=108583872211618          # Connected Facebook Page
-FACEBOOK_USER_ID=1846867453379711         # Your Facebook User ID
+INSTAGRAM_ACCOUNT_ID=    # Use Business Account ID, NOT User ID
+FACEBOOK_PAGE_ID=          # Connected Facebook Page
+FACEBOOK_USER_ID=         # Your Facebook User ID
 ```
 
 ### **2. Meta App Configuration**
@@ -180,23 +180,7 @@ FACEBOOK_USER_ID=1846867453379711         # Your Facebook User ID
 ✅ comments                          // Instagram comment events
 ```
 
-### **3. Environment Variables**
-```bash
-# Meta App Credentials
-NEXT_PUBLIC_META_APP_ID=1784401719137951
-META_APP_SECRET=e9c381825903828b52612ae0f2f94364
 
-# Instagram API Configuration  
-INSTAGRAM_ACCOUNT_ID=17841463755973016    # ⚠️ CRITICAL: Must be numeric Business Account ID
-INSTAGRAM_ACCESS_TOKEN=IGAAJlgQpaDHR...    # Long-lived access token
-
-# Webhook Configuration
-WEBHOOK_VERIFY_TOKEN=Haseeb,.122025        # Custom verification token
-WEBHOOK_URL=https://your-domain.com/api/instagram/webhook
-
-# Development
-NODE_ENV=development
-```
 
 ## 🚨 Common Pitfalls & Solutions
 
@@ -207,10 +191,10 @@ NODE_ENV=development
 INSTAGRAM_ACCOUNT_ID=haseeb.ahmed.raza.khan
 
 // WRONG - Facebook User ID  
-INSTAGRAM_ACCOUNT_ID=1846867453379711
+INSTAGRAM_ACCOUNT_ID=
 
 // ✅ CORRECT - Instagram Business Account ID
-INSTAGRAM_ACCOUNT_ID=17841463755973016
+INSTAGRAM_ACCOUNT_ID=
 ```
 
 **✅ Solution**: Use the numeric Instagram Business Account ID, find it via:

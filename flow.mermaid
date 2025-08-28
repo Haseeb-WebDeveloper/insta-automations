@@ -1,0 +1,26 @@
+sequenceDiagram
+    participant Dev as You (Developer)
+    participant Meta as Meta Developer Platform
+    participant User as Your Customer  
+    participant IG as Instagram
+    
+    rect rgb(255, 200, 200)
+        Note over Dev, Meta: REQUIRED: One-Time Setup
+        Dev->>Meta: 1. Create Meta App
+        Dev->>Meta: 2. Submit for verification
+        Meta->>Meta: 3. Review & approve app
+        Meta->>Dev: 4. App approved ✅
+    end
+    
+    rect rgb(200, 255, 200)
+        Note over User, IG: Runtime: Per User
+        User->>Dev: 5. Sign up on your platform
+        User->>Dev: 6. Click "Connect Instagram"
+        Dev->>IG: 7. Redirect to Instagram OAuth (using your Meta App ID)
+        IG->>User: 8. "Authorize [YourApp] to access Instagram?"
+        User->>IG: 9. "Yes, authorize"
+        IG->>Dev: 10. Return with access code
+        Dev->>IG: 11. Exchange code for token (using Meta App Secret)
+        IG->>Dev: 12. Return user's access token
+        Dev->>Dev: 13. Store token in Supabase for this user
+    end

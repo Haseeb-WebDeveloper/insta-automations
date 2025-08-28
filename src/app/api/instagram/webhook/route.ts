@@ -41,6 +41,10 @@ interface InstagramCommentChange {
   value: {
     id: string;
     media_id: string;
+    media ?: {
+      id: string;
+      media_product_type?: string;
+    };
     text: string;
     from: {
       id: string;

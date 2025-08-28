@@ -5,10 +5,10 @@ import storage, { CommentMonitor } from '@/lib/comment-monitor-storage';
 // PUT - Update specific monitor
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }>}
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     
     // Find monitor
@@ -42,18 +42,12 @@ export async function PUT(
 
     const updatedMonitor = storage.getMonitorById(id);
 
-    logger.info('Updated monitor:', {
-      id: updatedMonitor!.id,
-      updates
-    });
-
     return NextResponse.json({
       success: true,
       monitor: updatedMonitor
     });
 
   } catch (error) {
-    logger.error('Failed to update monitor:', error);
     return NextResponse.json(
       { error: 'Failed to update monitor' },
       { status: 500 }
@@ -64,10 +58,10 @@ export async function PUT(
 // DELETE - Delete specific monitor
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }>}
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     
     // Delete monitor
     const deleted = storage.deleteMonitor(id);
@@ -79,7 +73,7 @@ export async function DELETE(
       );
     }
 
-    logger.info('Deleted monitor:', { id });
+    logger.info('Deleted monitor:', id);
 
     return NextResponse.json({
       success: true,
@@ -87,7 +81,7 @@ export async function DELETE(
     });
 
   } catch (error) {
-    logger.error('Failed to delete monitor:', error);
+    logger.error('Failed to delete monitor:', error as string);
     return NextResponse.json(
       { error: 'Failed to delete monitor' },
       { status: 500 }
@@ -117,7 +111,7 @@ export async function GET(
     });
 
   } catch (error) {
-    logger.error('Failed to fetch monitor:', error);
+    logger.error('Failed to fetch monitor:', error as string);
     return NextResponse.json(
       { error: 'Failed to fetch monitor' },
       { status: 500 }
