@@ -14,7 +14,7 @@ export async function GET() {
       total: monitors.length
     });
   } catch (error) {
-    logger.error('Failed to fetch monitors:', error);
+    logger.error('Failed to fetch monitors:', error as string);
     return NextResponse.json(
       { error: 'Failed to fetch monitors' },
       { status: 500 }
@@ -79,11 +79,6 @@ export async function POST(request: NextRequest) {
 
     storage.addMonitor(newMonitor);
 
-    logger.info('Created new comment monitor:', {
-      id: newMonitor.id,
-      postId: newMonitor.postId,
-      keyword: newMonitor.keyword
-    });
 
     return NextResponse.json({
       success: true,
@@ -91,7 +86,7 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
 
   } catch (error) {
-    logger.error('Failed to create monitor:', error);
+    logger.error('Failed to create monitor:', error as string);
     return NextResponse.json(
       { error: 'Failed to create monitor' },
       { status: 500 }
@@ -111,7 +106,7 @@ export async function DELETE() {
       message: `Deleted ${deletedCount} monitors`
     });
   } catch (error) {
-    logger.error('Failed to delete all monitors:', error);
+    logger.error('Failed to delete all monitors:', error as string);
     return NextResponse.json(
       { error: 'Failed to delete monitors' },
       { status: 500 }
